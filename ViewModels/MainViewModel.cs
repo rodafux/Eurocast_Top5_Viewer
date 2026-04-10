@@ -7,9 +7,24 @@ using System.Text.Json;
 using System.Windows.Threading;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Threading.Tasks;
+using System.Windows.Input;
+using Eurocast_Top5_Viewer.Interfaces;
+using Eurocast_Top5_Viewer.Models;
+using Eurocast_Top5_Viewer.Services;
 
 namespace Eurocast_Top5_Viewer.ViewModels
 {
+    // --- Implémentation simple des commandes ICommand pour les boutons ---
+    public class RelayCommand : ICommand
+    {
+        private readonly Action _execute;
+        public RelayCommand(Action execute) { _execute = execute; }
+        public event EventHandler? CanExecuteChanged { add { } remove { } }
+        public bool CanExecute(object? parameter) => true;
+        public void Execute(object? parameter) => _execute();
+    }
+
     public class ProductionHistoryEntry
     {
         public DateTime Timestamp { get; set; }
@@ -39,14 +54,13 @@ namespace Eurocast_Top5_Viewer.ViewModels
         public bool IsHeader { get; set; }
         public bool IsNotHeader => !IsHeader;
         public string MachineInfo { get; set; } = "";
+        public string MachineColor { get; set; } = "Transparent";
         public string State { get; set; } = "";
         public string CreationDateStr { get; set; } = "";
         public string DefectType { get; set; } = "";
         public string CoreNumber { get; set; } = "";
         public string Comment { get; set; } = "";
         public DateTime CreationDate { get; set; }
-
-        // NOUVEAU : Variables pour l'alerte noyau
         public int CoreAlertCount { get; set; } = 0;
         public string CoreAlertText => CoreAlertCount > 1 ? $"⚠️ ALERTE : CASSÉ {CoreAlertCount} FOIS EN 7 JOURS" : "";
 
@@ -54,27 +68,22 @@ namespace Eurocast_Top5_Viewer.ViewModels
         public string ElapsedTime { get => _elapsedTime; set { _elapsedTime = value; OnPropertyChanged(); } }
 
         public string DefectDisplay => string.IsNullOrWhiteSpace(CoreNumber) ? DefectType : $"{DefectType} (Noyau {CoreNumber})";
+        public string BackgroundColor => IsHeader ? "Transparent" : "#0A3B66";
+        public string TextColor => "#F8FAFC";
 
-        public string BackgroundColor => IsHeader ? "#1E293B" : (State == "NC" ? "#450A0A" : (State == "AA" ? "#422006" : (State == "B" ? "#064E3B" : "#0F172A")));
-        public string TextColor => IsHeader ? "#F8FAFC" : (State == "NC" ? "#FECACA" : (State == "AA" ? "#FDE68A" : (State == "B" ? "#A7F3D0" : "#CBD5E1")));
-        public string AccentColor => IsHeader ? "#38BDF8" : (State == "NC" ? "#EF4444" : (State == "AA" ? "#F59E0B" : (State == "B" ? "#10B981" : "#334155")));
+        // CORRECTION : Le "B" (Validé) est maintenant VERT (#10B981)
+        public string AccentColor => State == "NC" ? "#E53935" : (State == "AA" ? "#FFB300" : (State == "B" ? "#10B981" : "Transparent"));
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
         public void RefreshTime()
         {
             if (IsHeader) return;
-
-            if (State == "B")
-            {
-                ElapsedTime = "RÉSOLU";
-            }
+            if (State == "B") ElapsedTime = "RÉSOLU";
             else
             {
                 var delta = DateTime.Now - CreationDate;
-                ElapsedTime = delta.TotalDays >= 1
-                    ? $"{(int)delta.TotalDays}j {delta.Hours:D2}h {delta.Minutes:D2}m"
-                    : $"{delta.Hours}h {delta.Minutes:D2}m";
+                ElapsedTime = delta.TotalDays >= 1 ? $"{(int)delta.TotalDays}j {delta.Hours:D2}h" : $"{delta.Hours}h {delta.Minutes:D2}m";
             }
         }
 
@@ -83,8 +92,11 @@ namespace Eurocast_Top5_Viewer.ViewModels
 
     public class MainViewModel : INotifyPropertyChanged
     {
+        private readonly IQualityService _qualityService;
+
         public ObservableCollection<DisplayItem> DashboardItems { get; set; } = new ObservableCollection<DisplayItem>();
         private List<List<DisplayItem>> _allPages = new List<List<DisplayItem>>();
+        private List<string> _flashUrls = new List<string>();
 
         private string _lastUpdateText = "";
         public string LastUpdateText { get => _lastUpdateText; set { _lastUpdateText = value; OnPropertyChanged(); } }
@@ -92,24 +104,57 @@ namespace Eurocast_Top5_Viewer.ViewModels
         private string _pageIndicatorText = "";
         public string PageIndicatorText { get => _pageIndicatorText; set { _pageIndicatorText = value; OnPropertyChanged(); } }
 
+        // Gestions de l'interface et du lecteur
+        private bool _isFlashVisible;
+        public bool IsFlashVisible { get => _isFlashVisible; set { _isFlashVisible = value; OnPropertyChanged(); OnPropertyChanged(nameof(IsDefectsVisible)); } }
+        public bool IsDefectsVisible => !_isFlashVisible;
+
+        private bool _isWindowed = true;
+        public bool IsWindowed { get => _isWindowed; set { _isWindowed = value; OnPropertyChanged(); } }
+
+        private bool _isPaused = false;
+        public bool IsPaused { get => _isPaused; set { _isPaused = value; OnPropertyChanged(); OnPropertyChanged(nameof(PausePlayText)); } }
+        public string PausePlayText => IsPaused ? "▶ LECTURE" : "⏸ PAUSE";
+
+        public ICommand TogglePauseCommand { get; }
+        public ICommand NextPageCommand { get; }
+        public ICommand PrevPageCommand { get; }
+
+        private FlashDetail? _currentFlashDetail;
+        public FlashDetail? CurrentFlashDetail { get => _currentFlashDetail; set { _currentFlashDetail = value; OnPropertyChanged(); } }
+
         private DispatcherTimer _dataTimer;
         private DispatcherTimer _clockTimer;
         private DispatcherTimer _pagingTimer;
 
         private int _currentPageIndex = 0;
+        private int _currentFlashIndex = 0;
         private readonly int _itemsPerPage = 10;
-
         private readonly string _basePath = @"P:\Delle\Pot Commun\Informatique\NE PAS SUPPRIMER - TOP5_QUALITE\data";
+
+        private readonly string[] _machineColorPalette = new string[]
+        {
+            "#00E5FF", "#D500F9", "#FFEA00", "#00B0FF", "#F8FAFC", "#76FF03",
+            "#FF9100", "#F50057", "#1DE9B6", "#651FFF", "#FF3D00", "#C6FF00"
+        };
 
         public MainViewModel()
         {
+            _qualityService = new QualityService();
+
+            TogglePauseCommand = new RelayCommand(() => IsPaused = !IsPaused);
+            NextPageCommand = new RelayCommand(async () => { await NextPageAsync(); RestartTimer(); });
+            PrevPageCommand = new RelayCommand(async () => { await PrevPageAsync(); RestartTimer(); });
+
             LoadData();
+            _ = LoadFlashesAsync();
+
             _dataTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(60) };
-            _dataTimer.Tick += (s, e) => LoadData();
+            _dataTimer.Tick += async (s, e) => { LoadData(); await LoadFlashesAsync(); };
             _dataTimer.Start();
 
             _pagingTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
-            _pagingTimer.Tick += (s, e) => NextPage();
+            _pagingTimer.Tick += async (s, e) => { if (!IsPaused) await NextPageAsync(); };
             _pagingTimer.Start();
 
             _clockTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
@@ -117,17 +162,106 @@ namespace Eurocast_Top5_Viewer.ViewModels
             _clockTimer.Start();
         }
 
-        private void NextPage()
+        private void RestartTimer()
         {
-            if (_allPages.Count == 0) return;
-            _currentPageIndex = (_currentPageIndex + 1) % _allPages.Count;
-            UpdatePageDisplay();
+            _pagingTimer.Stop();
+            _pagingTimer.Start();
+        }
+
+        private async Task LoadFlashesAsync()
+        {
+            _flashUrls = await _qualityService.GetRecentFlashUrlsAsync();
+        }
+
+        private async Task NextPageAsync()
+        {
+            if (IsFlashVisible)
+            {
+                _currentFlashIndex++;
+                if (_currentFlashIndex >= _flashUrls.Count)
+                {
+                    IsFlashVisible = false;
+                    _currentPageIndex = 0;
+                    UpdatePageDisplay();
+                }
+                else await ShowFlashAsync(_currentFlashIndex);
+            }
+            else
+            {
+                _currentPageIndex++;
+                if (_currentPageIndex >= _allPages.Count || _allPages.Count == 0)
+                {
+                    if (_flashUrls.Count > 0)
+                    {
+                        IsFlashVisible = true;
+                        _currentFlashIndex = 0;
+                        await ShowFlashAsync(_currentFlashIndex);
+                    }
+                    else
+                    {
+                        _currentPageIndex = 0;
+                        UpdatePageDisplay();
+                    }
+                }
+                else UpdatePageDisplay();
+            }
+        }
+
+        private async Task PrevPageAsync()
+        {
+            if (IsFlashVisible)
+            {
+                _currentFlashIndex--;
+                if (_currentFlashIndex < 0)
+                {
+                    IsFlashVisible = false;
+                    if (_allPages.Count > 0)
+                    {
+                        _currentPageIndex = _allPages.Count - 1;
+                        UpdatePageDisplay();
+                    }
+                    else if (_flashUrls.Count > 0)
+                    {
+                        IsFlashVisible = true;
+                        _currentFlashIndex = _flashUrls.Count - 1;
+                        await ShowFlashAsync(_currentFlashIndex);
+                    }
+                }
+                else await ShowFlashAsync(_currentFlashIndex);
+            }
+            else
+            {
+                _currentPageIndex--;
+                if (_currentPageIndex < 0)
+                {
+                    if (_flashUrls.Count > 0)
+                    {
+                        IsFlashVisible = true;
+                        _currentFlashIndex = _flashUrls.Count - 1;
+                        await ShowFlashAsync(_currentFlashIndex);
+                    }
+                    else if (_allPages.Count > 0)
+                    {
+                        _currentPageIndex = _allPages.Count - 1;
+                        UpdatePageDisplay();
+                    }
+                    else _currentPageIndex = 0;
+                }
+                else UpdatePageDisplay();
+            }
+        }
+
+        private async Task ShowFlashAsync(int index)
+        {
+            var url = _flashUrls[index];
+            CurrentFlashDetail = await _qualityService.GetFlashDetailAsync(url);
+            PageIndicatorText = $"FLASH QUALITÉ {index + 1}/{_flashUrls.Count}";
         }
 
         private void UpdatePageDisplay()
         {
-            if (_allPages.Count <= 1) PageIndicatorText = "";
-            else PageIndicatorText = $"PAGE {_currentPageIndex + 1}/{_allPages.Count}";
+            if (_allPages.Count <= 1 && _flashUrls.Count == 0) PageIndicatorText = "";
+            else if (_allPages.Count > 0) PageIndicatorText = $"PAGE {_currentPageIndex + 1}/{_allPages.Count}";
 
             DashboardItems.Clear();
             if (_allPages.Count > _currentPageIndex)
@@ -144,31 +278,39 @@ namespace Eurocast_Top5_Viewer.ViewModels
                 string defDir = Path.Combine(_basePath, "HistoriqueDefauts");
                 if (!File.Exists(prodPath)) return;
 
-                var prodHistory = JsonSerializer.Deserialize<List<ProductionHistoryEntry>>(File.ReadAllText(prodPath), new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-                if (prodHistory == null || !prodHistory.Any()) return;
+                var prodHistory = JsonSerializer.Deserialize<List<ProductionHistoryEntry>>(File.ReadAllText(prodPath), new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new List<ProductionHistoryEntry>();
+                if (!prodHistory.Any()) return;
 
                 var activeProds = prodHistory.GroupBy(h => h.Machine).ToDictionary(g => g.Key, g => g.OrderByDescending(h => h.Timestamp).First());
 
                 var newPages = new List<List<DisplayItem>>();
                 var currentPageList = new List<DisplayItem>();
+                var machineColors = new Dictionary<string, string>();
+                int colorIndex = 0;
 
                 foreach (var prod in activeProds.Values.Where(p => p.Piece != "---"))
                 {
+                    if (!machineColors.ContainsKey(prod.Machine))
+                    {
+                        machineColors[prod.Machine] = _machineColorPalette[colorIndex % _machineColorPalette.Length];
+                        colorIndex++;
+                    }
+                    string currentMachineColor = machineColors[prod.Machine];
+
                     string safePiece = string.Join("_", prod.Piece.Split(Path.GetInvalidFileNameChars()));
                     string safeMoule = string.Join("_", prod.Moule.Split(Path.GetInvalidFileNameChars()));
                     string defectFile = Path.Combine(defDir, $"Defauts_{safePiece}_{safeMoule}.json");
 
                     if (File.Exists(defectFile))
                     {
-                        var history = JsonSerializer.Deserialize<List<DefectHistoryEntry>>(File.ReadAllText(defectFile), new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                        var history = JsonSerializer.Deserialize<List<DefectHistoryEntry>>(File.ReadAllText(defectFile), new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new List<DefectHistoryEntry>();
                         var activeMachineItems = new List<DisplayItem>();
 
-                        if (history != null)
+                        if (history.Any())
                         {
                             var groupedDefects = history.GroupBy(d => d.Id).ToList();
-
-                            // 1. ANALYSE DES 7 DERNIERS JOURS : On compte le nombre de fois où chaque noyau a eu un défaut.
                             var coreAlertCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
                             foreach (var group in groupedDefects)
                             {
                                 var latest = group.Last();
@@ -188,12 +330,10 @@ namespace Eurocast_Top5_Viewer.ViewModels
                                 }
                             }
 
-                            // 2. GÉNÉRATION DES DÉFAUTS ACTIFS
                             foreach (var group in groupedDefects)
                             {
                                 var latest = group.Last();
                                 var first = group.First();
-
                                 DateTime lastActionDate = DateTime.Now;
                                 if (DateTime.TryParseExact($"{latest.Date} {latest.Heure}", "dd/MM/yyyy HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out DateTime pDate))
                                 {
@@ -207,7 +347,6 @@ namespace Eurocast_Top5_Viewer.ViewModels
                                 {
                                     DateTime.TryParseExact($"{first.Date} {first.Heure}", "dd/MM/yyyy HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out DateTime cDate);
 
-                                    // Vérification si ce noyau précis a une alerte
                                     int alertCount = 0;
                                     string coreTrimmed = latest.NumeroNoyau?.Trim() ?? "";
                                     if (!string.IsNullOrEmpty(coreTrimmed) && coreAlertCounts.ContainsKey(coreTrimmed))
@@ -223,7 +362,7 @@ namespace Eurocast_Top5_Viewer.ViewModels
                                         Comment = latest.Commentaire,
                                         CreationDate = cDate,
                                         CreationDateStr = cDate.ToString("dd/MM HH:mm"),
-                                        CoreAlertCount = alertCount // Transmission au visuel
+                                        CoreAlertCount = alertCount
                                     };
                                     item.RefreshTime();
                                     activeMachineItems.Add(item);
@@ -234,11 +373,11 @@ namespace Eurocast_Top5_Viewer.ViewModels
                         if (activeMachineItems.Any())
                         {
                             var sortedDefects = activeMachineItems.OrderBy(x => x.State == "NC" ? 0 : (x.State == "AA" ? 1 : 2)).ThenBy(x => x.CreationDate).ToList();
-                            string baseHeaderTitle = $"{prod.Machine}  ▸  Pièce: {prod.Piece}  ({prod.Moule})";
+                            string baseHeaderTitle = $"{prod.Machine} ▸ {prod.Piece} ({prod.Moule})";
 
                             if (currentPageList.Count + 1 + sortedDefects.Count <= _itemsPerPage)
                             {
-                                currentPageList.Add(new DisplayItem { IsHeader = true, MachineInfo = baseHeaderTitle });
+                                currentPageList.Add(new DisplayItem { IsHeader = true, MachineInfo = baseHeaderTitle, MachineColor = currentMachineColor });
                                 currentPageList.AddRange(sortedDefects);
                             }
                             else if (1 + sortedDefects.Count <= _itemsPerPage)
@@ -248,7 +387,7 @@ namespace Eurocast_Top5_Viewer.ViewModels
                                     newPages.Add(currentPageList);
                                     currentPageList = new List<DisplayItem>();
                                 }
-                                currentPageList.Add(new DisplayItem { IsHeader = true, MachineInfo = baseHeaderTitle });
+                                currentPageList.Add(new DisplayItem { IsHeader = true, MachineInfo = baseHeaderTitle, MachineColor = currentMachineColor });
                                 currentPageList.AddRange(sortedDefects);
                             }
                             else
@@ -259,7 +398,7 @@ namespace Eurocast_Top5_Viewer.ViewModels
                                     currentPageList = new List<DisplayItem>();
                                 }
 
-                                currentPageList.Add(new DisplayItem { IsHeader = true, MachineInfo = baseHeaderTitle });
+                                currentPageList.Add(new DisplayItem { IsHeader = true, MachineInfo = baseHeaderTitle, MachineColor = currentMachineColor });
 
                                 foreach (var defect in sortedDefects)
                                 {
@@ -267,7 +406,7 @@ namespace Eurocast_Top5_Viewer.ViewModels
                                     {
                                         newPages.Add(currentPageList);
                                         currentPageList = new List<DisplayItem>();
-                                        currentPageList.Add(new DisplayItem { IsHeader = true, MachineInfo = baseHeaderTitle + "  (Suite)" });
+                                        currentPageList.Add(new DisplayItem { IsHeader = true, MachineInfo = baseHeaderTitle + " (Suite)", MachineColor = currentMachineColor });
                                     }
                                     currentPageList.Add(defect);
                                 }
@@ -279,9 +418,9 @@ namespace Eurocast_Top5_Viewer.ViewModels
                 if (currentPageList.Any()) newPages.Add(currentPageList);
 
                 _allPages = newPages;
-                if (_currentPageIndex >= _allPages.Count) _currentPageIndex = 0;
+                if (!IsFlashVisible && _currentPageIndex >= _allPages.Count) _currentPageIndex = 0;
 
-                UpdatePageDisplay();
+                if (!IsFlashVisible) UpdatePageDisplay();
                 LastUpdateText = $"SYNC: {DateTime.Now:HH:mm}";
             }
             catch { LastUpdateText = "ERREUR RÉSEAU"; }

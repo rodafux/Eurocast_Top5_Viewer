@@ -4,6 +4,6 @@
              xmlns:local="clr-namespace:Eurocast_Top5_Viewer"
              StartupUri="MainWindow.xaml">
     <Application.Resources>
-         
+
     </Application.Resources>
 </Application>
