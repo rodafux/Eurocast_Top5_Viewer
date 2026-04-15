@@ -68,22 +68,51 @@ namespace Eurocast_Top5_Viewer.ViewModels
         public string ElapsedTime { get => _elapsedTime; set { _elapsedTime = value; OnPropertyChanged(); } }
 
         public string DefectDisplay => string.IsNullOrWhiteSpace(CoreNumber) ? DefectType : $"{DefectType} (Noyau {CoreNumber})";
-        public string BackgroundColor => IsHeader ? "Transparent" : "#0A3B66";
+
+        // Les couleurs sont devenues des propriétés dynamiques notifiables
+        private string _backgroundColor = "Transparent";
+        public string BackgroundColor { get => _backgroundColor; set { _backgroundColor = value; OnPropertyChanged(); } }
+
+        private string _accentColor = "Transparent";
+        public string AccentColor { get => _accentColor; set { _accentColor = value; OnPropertyChanged(); } }
+
         public string TextColor => "#F8FAFC";
 
-        // CORRECTION : Le "B" (Validé) est maintenant VERT (#10B981)
-        public string AccentColor => State == "NC" ? "#E53935" : (State == "AA" ? "#FFB300" : (State == "B" ? "#10B981" : "Transparent"));
+        private bool _blinkToggle = false;
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
         public void RefreshTime()
         {
-            if (IsHeader) return;
+            if (IsHeader)
+            {
+                BackgroundColor = "Transparent";
+                AccentColor = "Transparent";
+                return;
+            }
+
+            var delta = DateTime.Now - CreationDate;
+
             if (State == "B") ElapsedTime = "RÉSOLU";
             else
             {
-                var delta = DateTime.Now - CreationDate;
                 ElapsedTime = delta.TotalDays >= 1 ? $"{(int)delta.TotalDays}j {delta.Hours:D2}h" : $"{delta.Hours}h {delta.Minutes:D2}m";
+            }
+
+            // Logique de clignotement : si Non Conforme (NC) et créé depuis moins de 15 minutes
+            if (State == "NC" && delta.TotalMinutes < 15)
+            {
+                _blinkToggle = !_blinkToggle;
+                // Alternance entre fond rouge sombre d'alerte et fond bleu standard
+                BackgroundColor = _blinkToggle ? "#7F1D1D" : "#0A3B66";
+                // Alternance de l'accent
+                AccentColor = _blinkToggle ? "Transparent" : "#E53935";
+            }
+            else
+            {
+                // Couleurs par défaut
+                BackgroundColor = "#0A3B66";
+                AccentColor = State == "NC" ? "#E53935" : (State == "AA" ? "#FFB300" : (State == "B" ? "#10B981" : "Transparent"));
             }
         }
 
@@ -270,6 +299,13 @@ namespace Eurocast_Top5_Viewer.ViewModels
             }
         }
 
+        private DisplayItem CreateHeaderItem(string info, string color)
+        {
+            var header = new DisplayItem { IsHeader = true, MachineInfo = info, MachineColor = color };
+            header.RefreshTime(); // Force l'initialisation propre
+            return header;
+        }
+
         private void LoadData()
         {
             try
@@ -364,7 +400,7 @@ namespace Eurocast_Top5_Viewer.ViewModels
                                         CreationDateStr = cDate.ToString("dd/MM HH:mm"),
                                         CoreAlertCount = alertCount
                                     };
-                                    item.RefreshTime();
+                                    item.RefreshTime(); // Force l'initialisation des couleurs
                                     activeMachineItems.Add(item);
                                 }
                             }
@@ -377,7 +413,7 @@ namespace Eurocast_Top5_Viewer.ViewModels
 
                             if (currentPageList.Count + 1 + sortedDefects.Count <= _itemsPerPage)
                             {
-                                currentPageList.Add(new DisplayItem { IsHeader = true, MachineInfo = baseHeaderTitle, MachineColor = currentMachineColor });
+                                currentPageList.Add(CreateHeaderItem(baseHeaderTitle, currentMachineColor));
                                 currentPageList.AddRange(sortedDefects);
                             }
                             else if (1 + sortedDefects.Count <= _itemsPerPage)
@@ -387,7 +423,7 @@ namespace Eurocast_Top5_Viewer.ViewModels
                                     newPages.Add(currentPageList);
                                     currentPageList = new List<DisplayItem>();
                                 }
-                                currentPageList.Add(new DisplayItem { IsHeader = true, MachineInfo = baseHeaderTitle, MachineColor = currentMachineColor });
+                                currentPageList.Add(CreateHeaderItem(baseHeaderTitle, currentMachineColor));
                                 currentPageList.AddRange(sortedDefects);
                             }
                             else
@@ -398,7 +434,7 @@ namespace Eurocast_Top5_Viewer.ViewModels
                                     currentPageList = new List<DisplayItem>();
                                 }
 
-                                currentPageList.Add(new DisplayItem { IsHeader = true, MachineInfo = baseHeaderTitle, MachineColor = currentMachineColor });
+                                currentPageList.Add(CreateHeaderItem(baseHeaderTitle, currentMachineColor));
 
                                 foreach (var defect in sortedDefects)
                                 {
@@ -406,7 +442,7 @@ namespace Eurocast_Top5_Viewer.ViewModels
                                     {
                                         newPages.Add(currentPageList);
                                         currentPageList = new List<DisplayItem>();
-                                        currentPageList.Add(new DisplayItem { IsHeader = true, MachineInfo = baseHeaderTitle + " (Suite)", MachineColor = currentMachineColor });
+                                        currentPageList.Add(CreateHeaderItem(baseHeaderTitle + " (Suite)", currentMachineColor));
                                     }
                                     currentPageList.Add(defect);
                                 }
