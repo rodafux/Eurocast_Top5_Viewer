@@ -15,6 +15,7 @@
 		<SelfContained>false</SelfContained>
 
 		<GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+
 	</PropertyGroup>
 
 </Project>
