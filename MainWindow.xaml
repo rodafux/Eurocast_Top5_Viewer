@@ -4,7 +4,8 @@
         xmlns:vm="clr-namespace:Eurocast_Top5_Viewer.ViewModels"
         Title="Top5 Dashboard Qualité (Appuyez sur F11 pour le Plein Écran)" 
         WindowStyle="SingleBorderWindow" WindowState="Normal" Background="#061224"
-        KeyDown="Window_KeyDown">
+        KeyDown="Window_KeyDown"
+        UseLayoutRounding="True" SnapsToDevicePixels="True">
 
     <Window.DataContext>
         <vm:MainViewModel />
@@ -78,26 +79,37 @@
         </Grid.RowDefinitions>
 
         <Grid Grid.Row="0" Margin="0,0,0,15">
-            <StackPanel Orientation="Horizontal" VerticalAlignment="Bottom">
-                <TextBlock Text="DASHBOARD QUALITÉ" Foreground="#F8FAFC" FontSize="42" FontWeight="Light" Margin="0,0,40,0"/>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
 
-                <StackPanel Orientation="Horizontal" Visibility="{Binding IsDefectsVisible, Converter={StaticResource BooleanToVisibilityConverter}}" Margin="0,0,0,4">
-                    <Border Style="{StaticResource LegendBadge}" Background="#E53935">
-                        <TextBlock Text="Non conforme" Style="{StaticResource LegendText}"/>
-                    </Border>
-                    <Border Style="{StaticResource LegendBadge}" Background="#FFB300">
-                        <TextBlock Text="À améliorer" Style="{StaticResource LegendText}"/>
-                    </Border>
-                    <Border Style="{StaticResource LegendBadge}" Background="#10B981">
-                        <TextBlock Text="Validé" Style="{StaticResource LegendText}" Foreground="#061224"/>
-                    </Border>
+            <StackPanel Grid.Column="0" VerticalAlignment="Bottom">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="DASHBOARD QUALITÉ" Foreground="#F8FAFC" FontSize="42" FontWeight="Light" Margin="0,0,40,0"/>
+                    <StackPanel Orientation="Horizontal" Visibility="{Binding IsDefectsVisible, Converter={StaticResource BooleanToVisibilityConverter}}" Margin="0,0,0,4">
+                        <Border Style="{StaticResource LegendBadge}" Background="#E53935">
+                            <TextBlock Text="Non conforme" Style="{StaticResource LegendText}"/>
+                        </Border>
+                        <Border Style="{StaticResource LegendBadge}" Background="#FFB300">
+                            <TextBlock Text="À améliorer" Style="{StaticResource LegendText}"/>
+                        </Border>
+                        <Border Style="{StaticResource LegendBadge}" Background="#10B981">
+                            <TextBlock Text="Validé" Style="{StaticResource LegendText}" Foreground="#F8FAFC"/>
+                        </Border>
+                    </StackPanel>
                 </StackPanel>
+
+                <ComboBox ItemsSource="{Binding DisplayModes}" 
+                          SelectedIndex="{Binding SelectedDisplayMode}"
+                          Visibility="{Binding IsWindowed, Converter={StaticResource BooleanToVisibilityConverter}}"
+                          Width="420" HorizontalAlignment="Left" Margin="0,10,0,0" 
+                          FontSize="18" Padding="8" FontWeight="SemiBold" Cursor="Hand" />
             </StackPanel>
 
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,0,4">
+            <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,0,4">
                 <TextBlock Text="{Binding PageIndicatorText}" Foreground="#00E5FF" FontSize="24" FontWeight="Bold" Margin="0,0,25,0" VerticalAlignment="Center"/>
                 <TextBlock Text="{Binding LastUpdateText}" Foreground="#00E5FF" FontSize="18" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,20,0"/>
-
                 <StackPanel Orientation="Horizontal" Visibility="{Binding IsWindowed, Converter={StaticResource BooleanToVisibilityConverter}}">
                     <Button Command="{Binding PrevPageCommand}" Content="&#x23EE; PRÉC." Style="{StaticResource NavButton}"/>
                     <Button Command="{Binding TogglePauseCommand}" Content="{Binding PausePlayText}" Style="{StaticResource NavButton}"/>
@@ -115,7 +127,6 @@
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
-
                             <Ellipse Width="24" Height="24" Fill="{Binding MachineColor}" VerticalAlignment="Center" Margin="0,0,15,0"/>
                             <TextBlock Grid.Column="1" Text="{Binding MachineInfo}" Foreground="#00E5FF" FontSize="32" FontWeight="Bold"/>
                             <Border Grid.ColumnSpan="2" BorderBrush="#00E5FF" BorderThickness="0,0,0,2" Margin="0,40,0,0"/>
@@ -130,20 +141,15 @@
                                     <ColumnDefinition Width="4*"/>
                                     <ColumnDefinition Width="120"/>
                                 </Grid.ColumnDefinitions>
-
                                 <Border Grid.Column="0" Width="30" Margin="0,-5,15,-5" Background="{Binding AccentColor}" CornerRadius="4,0,0,4" />
-
                                 <TextBlock Grid.Column="1" Text="{Binding CreationDateStr}" Foreground="{Binding TextColor}" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,10,0"/>
                                 <TextBlock Grid.Column="2" Text="{Binding DefectDisplay}" Foreground="{Binding TextColor}" FontSize="24" FontWeight="Bold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="0,0,20,0"/>
-
                                 <Grid Grid.Column="3" VerticalAlignment="Center" Margin="0,0,20,0">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
-
                                     <TextBlock Grid.Column="0" Text="{Binding Comment}" Foreground="{Binding TextColor}" FontSize="22" VerticalAlignment="Center" TextWrapping="Wrap"/>
-
                                     <TextBlock Grid.Column="1" Text="{Binding CoreAlertText}" Foreground="#EF4444" FontSize="18" FontWeight="Black" VerticalAlignment="Center" Margin="15,0,0,0">
                                         <TextBlock.Style>
                                             <Style TargetType="TextBlock">
@@ -157,7 +163,6 @@
                                         </TextBlock.Style>
                                     </TextBlock>
                                 </Grid>
-
                                 <TextBlock Grid.Column="4" Text="{Binding ElapsedTime}" Foreground="{Binding TextColor}" FontSize="24" FontWeight="Bold" TextAlignment="Right" VerticalAlignment="Center" Margin="0,0,15,0"/>
                             </Grid>
                         </Border>
@@ -166,8 +171,10 @@
             </ItemsControl.ItemTemplate>
         </ItemsControl>
 
-        <Border Grid.Row="1" Margin="0,15,0,0" Background="#1E293B" CornerRadius="8" BorderBrush="#EF4444" BorderThickness="6,0,0,0" Visibility="{Binding IsFlashVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
-            <Grid Margin="30" DataContext="{Binding CurrentFlashDetail}">
+        <Border Grid.Row="1" Margin="0,15,0,0" Background="#1E293B" CornerRadius="8" BorderBrush="#EF4444" BorderThickness="6,0,0,0" 
+                Visibility="{Binding IsFlashVisible, Converter={StaticResource BooleanToVisibilityConverter}}"
+                ClipToBounds="False">
+            <Grid Margin="30" DataContext="{Binding CurrentFlashDetail}" ClipToBounds="False">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
@@ -189,17 +196,14 @@
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
-
                         <StackPanel Grid.Column="0" Margin="0,0,15,0">
                             <TextBlock Text="CLIENT" Style="{StaticResource FlashLabel}"/>
                             <TextBlock Text="{Binding Client}" Foreground="#38BDF8" FontSize="28" FontWeight="Bold" TextWrapping="Wrap"/>
                         </StackPanel>
-
                         <StackPanel Grid.Column="1" Margin="0,0,15,0">
                             <TextBlock Text="RÉFÉRENCE" Style="{StaticResource FlashLabel}"/>
                             <TextBlock Text="{Binding Reference}" Foreground="#F8FAFC" FontSize="28" FontWeight="Bold" TextWrapping="Wrap"/>
                         </StackPanel>
-
                         <StackPanel Grid.Column="2">
                             <TextBlock Text="DÉSIGNATION" Style="{StaticResource FlashLabel}"/>
                             <TextBlock Text="{Binding Designation}" Foreground="#F8FAFC" FontSize="28" FontWeight="Bold" TextWrapping="Wrap"/>
@@ -207,23 +211,29 @@
                     </Grid>
                 </Border>
 
-                <Grid Grid.Row="2">
+                <Grid Grid.Row="2" ClipToBounds="False">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="6*"/>
                         <ColumnDefinition Width="4*"/>
                     </Grid.ColumnDefinitions>
 
-                    <Border Grid.Column="0" Margin="0,0,30,0" CornerRadius="6" ClipToBounds="True" Background="#0F172A" BorderBrush="#334155" BorderThickness="2" VerticalAlignment="Stretch">
-                        <Image Source="{Binding DefectImageUrl}" Stretch="Uniform" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                    <Border x:Name="FlashImageContainer" Grid.Column="0" Margin="0,0,30,0" CornerRadius="6" Background="#0F172A" BorderBrush="#334155" BorderThickness="2" VerticalAlignment="Stretch" ClipToBounds="False" RenderTransformOrigin="0.5,0.5">
+                        <Border.RenderTransform>
+                            <TransformGroup>
+                                <ScaleTransform ScaleX="1" ScaleY="1"/>
+                                <TranslateTransform X="0" Y="0"/>
+                            </TransformGroup>
+                        </Border.RenderTransform>
+
+                        <Image x:Name="FlashImage" Source="{Binding DefectImageUrl}" Stretch="Uniform" VerticalAlignment="Center" HorizontalAlignment="Center" 
+                               RenderOptions.BitmapScalingMode="HighQuality" UseLayoutRounding="True" SnapsToDevicePixels="True" />
                     </Border>
 
                     <StackPanel Grid.Column="1">
                         <TextBlock Text="⯈ LIBELLÉ DU DÉFAUT" Foreground="#F59E0B" FontSize="24" FontWeight="Black" Margin="0,0,0,10"/>
                         <TextBlock Text="{Binding LibelleDefaut}" Style="{StaticResource FlashValue}"/>
-
                         <TextBlock Text="⯈ CONSÉQUENCES" Foreground="#EF4444" FontSize="24" FontWeight="Black" Margin="0,0,0,10"/>
                         <TextBlock Text="{Binding Consequences}" Style="{StaticResource FlashValue}"/>
-
                         <Border Background="#0F172A" BorderBrush="#10B981" BorderThickness="4,0,0,0" Padding="20">
                             <StackPanel>
                                 <TextBlock Text="PLAN DE RÉACTION" Foreground="#10B981" FontSize="24" FontWeight="Black" Margin="0,0,0,10"/>
