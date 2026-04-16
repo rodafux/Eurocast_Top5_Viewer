@@ -12,8 +12,6 @@ namespace Eurocast_Top5_Viewer
         public MainWindow()
         {
             InitializeComponent();
-
-            // Garantit l'abonnement à l'événement une fois la fenêtre réellement chargée
             this.Loaded += (s, e) =>
             {
                 if (this.DataContext is ViewModels.MainViewModel vm)
@@ -22,19 +20,21 @@ namespace Eurocast_Top5_Viewer
                     vm.FlashAppeared += Vm_FlashAppeared;
                 }
             };
-
-            this.DataContextChanged += MainWindow_DataContextChanged;
-        }
-
-        private void MainWindow_DataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
-        {
-            if (e.OldValue is ViewModels.MainViewModel oldVm) oldVm.FlashAppeared -= Vm_FlashAppeared;
-            if (e.NewValue is ViewModels.MainViewModel newVm) newVm.FlashAppeared += Vm_FlashAppeared;
+            this.DataContextChanged += (s, e) =>
+            {
+                if (e.OldValue is ViewModels.MainViewModel oldVm) oldVm.FlashAppeared -= Vm_FlashAppeared;
+                if (e.NewValue is ViewModels.MainViewModel newVm) newVm.FlashAppeared += Vm_FlashAppeared;
+            };
         }
 
         private async void Vm_FlashAppeared(object? sender, EventArgs e)
         {
-            // 1. Attente intelligente du Layout WPF
+            // DETECTION MODE FENETRÉ : Si actif, on ne déclenche pas l'animation
+            if (this.DataContext is ViewModels.MainViewModel vm && vm.IsWindowed)
+            {
+                return;
+            }
+
             int retries = 0;
             while ((FlashImageContainer == null || FlashImageContainer.ActualWidth == 0 || this.ActualWidth == 0) && retries < 20)
             {
@@ -49,29 +49,22 @@ namespace Eurocast_Top5_Viewer
                 try
                 {
                     this.UpdateLayout();
-
                     System.Windows.Controls.Panel.SetZIndex(FlashImageContainer, 1000);
 
-                    // 2. Calcul des centres
                     Point windowCenter = new Point(this.ActualWidth / 2, this.ActualHeight / 2);
-
                     Point containerCenter = FlashImageContainer.TransformToAncestor(this).Transform(
                         new Point(FlashImageContainer.ActualWidth / 2, FlashImageContainer.ActualHeight / 2));
 
                     double deltaX = windowCenter.X - containerCenter.X;
                     double deltaY = windowCenter.Y - containerCenter.Y;
 
-                    // 3. Zoom dynamique occupant l'écran jusqu'à ses limites
                     double scaleX = (this.ActualWidth * 0.98) / FlashImageContainer.ActualWidth;
                     double scaleY = (this.ActualHeight * 0.98) / FlashImageContainer.ActualHeight;
                     double targetScale = Math.Min(scaleX, scaleY);
 
                     if (targetScale < 1) targetScale = 1.0;
 
-                    // 4. Lancement de la Storyboard avec des temps allongés
                     var storyboard = new Storyboard();
-
-                    // TEMPS DE L'ANIMATION : Maintien de 9s, et la seconde partie (retour) dure 3 secondes (fin à 12s)
                     TimeSpan holdTime = TimeSpan.FromSeconds(9);
                     TimeSpan endTime = TimeSpan.FromSeconds(12);
 
@@ -97,56 +90,37 @@ namespace Eurocast_Top5_Viewer
 
                     Storyboard.SetTarget(animX, FlashImageContainer);
                     Storyboard.SetTargetProperty(animX, new PropertyPath("(UIElement.RenderTransform).(TransformGroup.Children)[1].(TranslateTransform.X)"));
-
                     Storyboard.SetTarget(animY, FlashImageContainer);
                     Storyboard.SetTargetProperty(animY, new PropertyPath("(UIElement.RenderTransform).(TransformGroup.Children)[1].(TranslateTransform.Y)"));
-
                     Storyboard.SetTarget(animScaleX, FlashImageContainer);
                     Storyboard.SetTargetProperty(animScaleX, new PropertyPath("(UIElement.RenderTransform).(TransformGroup.Children)[0].(ScaleTransform.ScaleX)"));
-
                     Storyboard.SetTarget(animScaleY, FlashImageContainer);
                     Storyboard.SetTargetProperty(animScaleY, new PropertyPath("(UIElement.RenderTransform).(TransformGroup.Children)[0].(ScaleTransform.ScaleY)"));
 
-                    storyboard.Children.Add(animX);
-                    storyboard.Children.Add(animY);
-                    storyboard.Children.Add(animScaleX);
-                    storyboard.Children.Add(animScaleY);
-
-                    storyboard.Completed += (s, ev) =>
-                    {
-                        System.Windows.Controls.Panel.SetZIndex(FlashImageContainer, 0);
-                    };
-
+                    storyboard.Children.Add(animX); storyboard.Children.Add(animY); storyboard.Children.Add(animScaleX); storyboard.Children.Add(animScaleY);
+                    storyboard.Completed += (s, ev) => System.Windows.Controls.Panel.SetZIndex(FlashImageContainer, 0);
                     storyboard.Begin();
                 }
-                catch (Exception) { /* Sécurité si la fenêtre est fermée en pleine animation */ }
+                catch { }
             });
         }
 
         private void Window_KeyDown(object sender, KeyEventArgs e)
         {
-            if (e.Key == Key.F11)
-            {
-                ToggleFullScreen();
-            }
+            if (e.Key == Key.F11) ToggleFullScreen();
         }
 
         private void ToggleFullScreen()
         {
             var vm = DataContext as ViewModels.MainViewModel;
-
             if (WindowStyle == WindowStyle.None)
             {
-                WindowStyle = WindowStyle.SingleBorderWindow;
-                WindowState = WindowState.Normal;
-                Topmost = false;
+                WindowStyle = WindowStyle.SingleBorderWindow; WindowState = WindowState.Normal; Topmost = false;
                 if (vm != null) vm.IsWindowed = true;
             }
             else
             {
-                WindowStyle = WindowStyle.None;
-                WindowState = WindowState.Maximized;
-                Topmost = true;
+                WindowStyle = WindowStyle.None; WindowState = WindowState.Maximized; Topmost = true;
                 if (vm != null) vm.IsWindowed = false;
             }
         }
